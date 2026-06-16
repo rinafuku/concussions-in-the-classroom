@@ -1,0 +1,50 @@
+# ============================================================
+# Data files — never commit student/patient data
+# ============================================================
+Data/
+raw_data/
+*.dta
+*.csv
+*.xlsx
+
+# ============================================================
+# Output folders
+# ============================================================
+tables/
+figures/
+Codes for Figures/
+HCAMP_desc/
+literature/
+data_dictionary/
+
+# ============================================================
+# Stata logs and graph files
+# ============================================================
+*.log
+*.gph
+*.smcl
+*.jpg
+
+# ============================================================
+# Root-level old working files
+# ============================================================
+conc_count2.do
+conc_count3.do
+fill_blanks.do
+run_analysis.do
+sumstats_all_onepage1.tex
+
+# ============================================================
+# Old code files — only data_cleaning.do and data_analysis.do
+# are tracked in code/
+# ============================================================
+code/*
+!code/data_cleaning.do
+!code/data_analysis.do
+
+# ============================================================
+# macOS system files
+# ============================================================
+.DS_Store
+Icon
+Icon?
