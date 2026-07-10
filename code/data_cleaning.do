@@ -9,7 +9,7 @@
 *        All file paths in this script are relative to that folder.
 * ============================================================
 
-cd "/Users/rachelinafuku/Dropbox (UH)/HCAMP"
+cd "YOUR_HCAMP_PATH_HERE"
 
 
 * ============================================================

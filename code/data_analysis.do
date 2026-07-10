@@ -8,7 +8,7 @@
 *        All file paths in this script are relative to that folder.
 * ============================================================
 
-cd "/Users/rachelinafuku/Dropbox (UH)/HCAMP"
+cd "YOUR_HCAMP_PATH_HERE"
 
 
 local sumstats_all = 1
@@ -63,7 +63,7 @@ if `sumstats_all' == 1 {
 		Wrestling Volleyball track_field martial_arts Tennis Swimming ///
 		Softball Soccer Paddling Football Cheerleading Basketball Baseball ///
 		grade9 grade10 grade11 grade12 ///
-		annual_gpa math_gpa eng_gpa sci_gpa cumulative_gpa AP ///
+		annual_gpa math_gpa eng_gpa sci_gpa cumulative_gpa ///
 		days_absent school_days offense ADHD AUT Dyslexia
 
 	eststo clear
@@ -198,13 +198,12 @@ if `figure2' == 1 {
 
 
 * -----------------------------------------------------------------------
-* FIGURE 3: Annual GPA by grade level and concussion history
+* FIGURE 3: Annual GPA by grade level, concussion status, and sex
+*           (never concussed vs. first concussion in 10th grade)
 * -----------------------------------------------------------------------
 if `figure3' == 1 {
 
 	use "Data/Processed Data/regdata_new.dta", clear
-
-	set scheme s1mono
 
 	* Grade-specific concussion totals (broadcast to student level)
 	gen conc_grade9  = sy_concussions if GradeLevel == 9
@@ -215,41 +214,85 @@ if `figure3' == 1 {
 	bysort research_id: egen total_conc10 = total(conc_grade10)
 
 	* Group 1: Never concussed
+	* Group 2: First concussion in 10th grade (none in 9th, at least 1 in 10th)
 	gen group = .
 	replace group = 1 if total_conc == 0
-
-	* Group 2: First concussion in 10th grade (none in grade 9, at least 1 in grade 10)
 	replace group = 2 if total_conc9 == 0 & total_conc10 >= 1
+
+	keep if inrange(GradeLevel, 9, 12) & !missing(annual_gpa) & !missing(group)
 
 	* Count unique students per group for legend labels
 	preserve
 		bysort research_id: keep if _n == 1
-		count if group == 1
-		local n_fig3_1 = r(N)
-		count if group == 2
-		local n_fig3_2 = r(N)
+		count if group == 1 & male == 1
+		local n_m_nc = r(N)
+		count if group == 2 & male == 1
+		local n_m_c  = r(N)
+		count if group == 1 & male == 0
+		local n_f_nc = r(N)
+		count if group == 2 & male == 0
+		local n_f_c  = r(N)
 	restore
 
-	* Keep grades 9–12 and classified groups only
-	keep if inrange(GradeLevel, 9, 12)
-	keep if !missing(group)
+	* Collapse to mean and SE by grade, group, and sex
+	collapse (mean) mean_gpa = annual_gpa ///
+	         (semean) se_gpa = annual_gpa, ///
+	    by(GradeLevel group male)
 
-	* Mean annual GPA by group and grade level
-	collapse (mean) annual_gpa, by(group GradeLevel)
+	* 95% CI
+	gen ci_lo = mean_gpa - 1.96 * se_gpa
+	gen ci_hi = mean_gpa + 1.96 * se_gpa
 
-	reshape wide annual_gpa, i(GradeLevel) j(group)
+	* Offset x positions for side-by-side bars
+	gen x_pos = GradeLevel - 0.2 if group == 1
+	replace x_pos = GradeLevel + 0.2 if group == 2
 
+	* --- Panel A: Males ---
 	twoway ///
-		(line annual_gpa1 GradeLevel, lcolor(navy) lpattern(solid)) ///
-		(line annual_gpa2 GradeLevel, lcolor(maroon) lpattern(dash)), ///
-		xlabel(9(1)12) ///
-		yscale(range(2.5 2.9)) ylabel(2.5(0.1)2.9) ///
-		xtitle("Grade Level") ///
-		ytitle("Annual GPA") ///
-		legend(order(1 "Never concussed (n=`n_fig3_1')" ///
-					 2 "First concussion in 10th grade (n=`n_fig3_2')") ///
-			   pos(6) cols(1)) ///
-		graphregion(color(white))
+	    (bar mean_gpa x_pos if male == 1 & group == 1, ///
+	        barwidth(0.35) fcolor(navy%70) lcolor(navy%70)) ///
+	    (bar mean_gpa x_pos if male == 1 & group == 2, ///
+	        barwidth(0.35) fcolor(maroon%70) lcolor(maroon%70)) ///
+	    (rcap ci_lo ci_hi x_pos if male == 1 & group == 1, ///
+	        lcolor(navy) lwidth(medium)) ///
+	    (rcap ci_lo ci_hi x_pos if male == 1 & group == 2, ///
+	        lcolor(maroon) lwidth(medium)), ///
+	    xlabel(9 "9th" 10 "10th" 11 "11th" 12 "12th") ///
+	    xtitle("Grade Level") ///
+	    ytitle("Annual GPA") ///
+	    legend(order(1 "Never concussed" 2 "First concussion in 10th grade") ///
+	           pos(6) cols(2) region(lcolor(none) fcolor(none))) ///
+	    title("Males") ///
+	    ytitle("Annual GPA", margin(medium)) ///
+	    yscale(range(2.4 3.2)) ylabel(2.4(0.2)3.2) ///
+	    graphregion(color(white)) plotregion(color(white)) bgcolor(white) ///
+	    name(fig3_male, replace)
+
+	* --- Panel B: Females ---
+	twoway ///
+	    (bar mean_gpa x_pos if male == 0 & group == 1, ///
+	        barwidth(0.35) fcolor(navy%70) lcolor(navy%70)) ///
+	    (bar mean_gpa x_pos if male == 0 & group == 2, ///
+	        barwidth(0.35) fcolor(maroon%70) lcolor(maroon%70)) ///
+	    (rcap ci_lo ci_hi x_pos if male == 0 & group == 1, ///
+	        lcolor(navy) lwidth(medium)) ///
+	    (rcap ci_lo ci_hi x_pos if male == 0 & group == 2, ///
+	        lcolor(maroon) lwidth(medium)), ///
+	    xlabel(9 "9th" 10 "10th" 11 "11th" 12 "12th") ///
+	    xtitle("Grade Level") ///
+	    legend(order(1 "Never concussed" 2 "First concussion in 10th grade") ///
+	           pos(6) cols(2) region(lcolor(none) fcolor(none))) ///
+	    title("Females") ///
+	    ytitle("Annual GPA", margin(medium)) ///
+	    yscale(range(2.4 3.2)) ylabel(2.4(0.2)3.2) ///
+	    graphregion(color(white)) plotregion(color(white)) bgcolor(white) ///
+	    name(fig3_female, replace)
+
+	* Combine panels side by side
+	graph combine fig3_male fig3_female, cols(2) ///
+	    graphregion(color(white)) ///
+	    xsize(14) ysize(6) ///
+	    name(fig3_combined, replace)
 
 	cap mkdir "figures"
 	graph export "figures/fig3_gpa_grade_concussion.png", as(png) replace
@@ -257,234 +300,245 @@ if `figure3' == 1 {
 }
 
 
+* -----------------------------------------------------------------------
+* TABLE 2: Summary statistics by concussion group
+* -----------------------------------------------------------------------
 if `sumstats_by_conc' == 1 {
 
-use "Data/Processed Data/regdata_new.dta", clear
+	use "Data/Processed Data/regdata_new.dta", clear
 
-	
-* create a never treated group
-gen never_treated = 0
-replace never_treated = 1 if ever_treated == 0
+	* create a never treated group
+	gen never_treated = 0
+	replace never_treated = 1 if ever_treated == 0
 
-* create a single concussion group
-bysort research_id: egen max_cum = max(cum_concussions)
-gen single_concussed = (max_cum == 1)
-	
-* create a group variable where 0 = never treated, 1 = 1 concussion, 2 = 2+ concussions
-gen conc_group = .
-replace conc_group = 0 if never_treated == 1
-replace conc_group = 1 if single_concussed == 1
-replace conc_group = 2 if ever_treated2 == 1
+	* create a single concussion group
+	bysort research_id: egen max_cum = max(cum_concussions)
+	gen single_concussed = (max_cum == 1)
 
-label define conc_group 0 "0 Concussions" 1 "1+ Concussion" 2 "2+ Concussions"
-label values conc_group conc_group
+	* create a group variable where 0 = never treated, 1 = 1 concussion, 2 = 2+ concussions
+	gen conc_group = .
+	replace conc_group = 0 if never_treated == 1
+	replace conc_group = 1 if single_concussed == 1
+	replace conc_group = 2 if ever_treated2 == 1
 
-* variable labels to match Table 2
-label var age                "Age"
-label var male               "Male"
-label var econ_disadvantaged "Economically Disadvantaged"
-label var ELLStatus          "ELL Status"
-label var SPEDStatus         "SPED Status"
-label var ADHD               "ADHD"
-label var AUT                "Autism"
-label var Dyslexia           "Dyslexia"
-label var Wrestling          "Wrestling"
-label var Volleyball         "Volleyball"
-label var track_field        "Track and Field"
-label var martial_arts       "Martial Arts"
-label var Tennis             "Tennis"
-label var Swimming           "Swimming"
-label var Softball           "Softball"
-label var Soccer             "Soccer"
-label var Paddling           "Paddling"
-label var Football           "Football"
-label var Cheerleading       "Cheerleading"
-label var Basketball         "Basketball"
-label var Baseball           "Baseball"
-label var annual_gpa         "Annual GPA"
-label var math_gpa           "Math GPA"
-label var eng_gpa            "English GPA"
-label var sci_gpa            "Science GPA"
-label var AP                 "AP Courseload"
-label var offense            "Behavioral Offense"
-label var days_absent        "Days Absent"
+	label define conc_group 0 "0 Concussions" 1 "1+ Concussion" 2 "2+ Concussions"
+	label values conc_group conc_group
 
-* list of covariates to display in summary stats table
-local covars age male econ_disadvantaged ELLStatus SPEDStatus ADHD AUT Dyslexia Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball annual_gpa math_gpa eng_gpa sci_gpa AP offense days_absent
+	* variable labels to match Table 2
+	label var age                "Age"
+	label var male               "Male"
+	label var econ_disadvantaged "Economically Disadvantaged"
+	label var ELLStatus          "ELL Status"
+	label var SPEDStatus         "SPED Status"
+	label var ADHD               "ADHD"
+	label var AUT                "Autism"
+	label var Dyslexia           "Dyslexia"
+	label var Wrestling          "Wrestling"
+	label var Volleyball         "Volleyball"
+	label var track_field        "Track and Field"
+	label var martial_arts       "Martial Arts"
+	label var Tennis             "Tennis"
+	label var Swimming           "Swimming"
+	label var Softball           "Softball"
+	label var Soccer             "Soccer"
+	label var Paddling           "Paddling"
+	label var Football           "Football"
+	label var Cheerleading       "Cheerleading"
+	label var Basketball         "Basketball"
+	label var Baseball           "Baseball"
+	label var annual_gpa         "Annual GPA"
+	label var math_gpa           "Math GPA"
+	label var eng_gpa            "English GPA"
+	label var sci_gpa            "Science GPA"
+	label var AP                 "AP Courseload"
+	label var offense            "Behavioral Offense"
+	label var days_absent        "Days Absent"
 
-eststo clear
-local stored_ests ""
-forvalues g = 0/2 {
+	* list of covariates to display in summary stats table
+	local covars age male econ_disadvantaged ELLStatus SPEDStatus ADHD AUT Dyslexia Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball annual_gpa math_gpa eng_gpa sci_gpa offense days_absent
 
-    * skip groups with no observations (e.g. never-treated may be absent from analysis sample)
-    quietly count if conc_group == `g'
-    if r(N) == 0 continue
+	eststo clear
+	local stored_ests ""
+	forvalues g = 0/2 {
 
-    * tag one observation per student
-    egen tag_student = tag(research_id) if conc_group==`g'
+	    * skip groups with no observations (e.g. never-treated may be absent from analysis sample)
+	    quietly count if conc_group == `g'
+	    if r(N) == 0 continue
 
-    * count distinct students
-    quietly count if tag_student==1
-    local n_students = r(N)
+	    * tag one observation per student
+	    egen tag_student = tag(research_id) if conc_group==`g'
 
-    * summary stats
-    estpost summarize `covars' if conc_group==`g'
+	    * count distinct students
+	    quietly count if tag_student==1
+	    local n_students = r(N)
 
-    * add distinct student count
-    estadd scalar students = `n_students'
+	    * summary stats
+	    estpost summarize `covars' if conc_group==`g'
 
-    eststo g`g'
-    local stored_ests "`stored_ests' g`g'"
+	    * add distinct student count
+	    estadd scalar students = `n_students'
 
-    drop tag_student
-}
+	    eststo g`g'
+	    local stored_ests "`stored_ests' g`g'"
 
-* LaTeX export: mean and sd for each covariate, columns for non-empty groups
-esttab `stored_ests' using "tables/sumstats_concussions.tex", replace ///
-	title("Summary Statistics by Total Concussions") ///
-	cells("mean(fmt(3)) sd(fmt(3))") ///
-	collabels("Mean" "SD") ///
-	mgroups("Never Concussed" "One Concussion" "2+ Concussions", ///
-		pattern(1 1 1) span ///
-		prefix(\multicolumn{@span}{c}{) suffix(}) ///
-		erepeat(\cmidrule(lr){@span})) ///
-	label nonumber nomtitle ///
-	stats(N students, labels("Student-Years" "Unique Students") fmt(%9.0f)) ///
-	booktabs ///
-	refcat( ///
-		age        "\addlinespace \textbf{Student Demographics}" ///
-		Wrestling  "\addlinespace \textbf{Sports Participation}" ///
-		annual_gpa "\addlinespace \textbf{Academic variables}" ///
-		offense    "\addlinespace \textbf{Behavioral variables}" ///
-		, nolabel )
+	    drop tag_student
+	}
 
-
-
+	* LaTeX export: mean and sd for each covariate, columns for non-empty groups
+	esttab `stored_ests' using "tables/sumstats_concussions.tex", replace ///
+		title("Summary Statistics by Total Concussions") ///
+		cells("mean(fmt(3)) sd(fmt(3))") ///
+		collabels("Mean" "SD") ///
+		mgroups("Never Concussed" "One Concussion" "2+ Concussions", ///
+			pattern(1 1 1) span ///
+			prefix(\multicolumn{@span}{c}{) suffix(}) ///
+			erepeat(\cmidrule(lr){@span})) ///
+		label nonumber nomtitle ///
+		stats(N students, labels("Student-Years" "Unique Students") fmt(%9.0f)) ///
+		booktabs ///
+		refcat( ///
+			age        "\addlinespace \textbf{Student Demographics}" ///
+			Wrestling  "\addlinespace \textbf{Sports Participation}" ///
+			annual_gpa "\addlinespace \textbf{Academic variables}" ///
+			offense    "\addlinespace \textbf{Behavioral variables}" ///
+			, nolabel )
 
 }
-	
+
+
+* -----------------------------------------------------------------------
+* TABLE 4: CS DiD — effects of a first concussion
+* -----------------------------------------------------------------------
 if `cs_did_single' == 1 {
-* ------- Running CS DiD regressions ------- *
 
-preserve
-keep if ever_treated==1 /*this is so the regression runs faster*/
+	use "Data/Processed Data/regdata_new.dta", clear
 
-foreach y in annual_gpa math_gpa eng_gpa sci_gpa AP offense days_absent {
-
-	*cs-did regression of cumulative concussions on cumulative gpa
-	csdid `y'  male i.ethnicity  ELLStatus SPEDStatus econ_disadvantaged Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear if ever_treated==1, ivar(research_id) time(sy) gvar(g) method(dripw) vce(cluster research_id)
-
-	* Count student-year observations (capture from csdid before estat overwrites e(N))
-	scalar N1 = e(N)
-
-	estat event, estore(reg_`y')
-
-	estadd scalar N = N1 : reg_`y'
-	
-	* Count UNIQUE individuals actually used in estimation
-    egen tag_id = tag(research_id) if e(sample)
-    count if tag_id
-    scalar N_unique = r(N)
-
-    * Add scalar to stored estimation
-    estadd scalar N_unique = N_unique : reg_`y'
-
-    * Clean up temporary variable
-    drop tag_id
-	
-}
-
-restore
-
-esttab reg_annual_gpa reg_math_gpa reg_eng_gpa reg_sci_gpa reg_AP reg_offense reg_days_absent using "tables/csdid_eventstudy.tex", replace ///
-    booktabs se label ///
-    b(%9.3f) se(%9.3f) ///
-    mtitles("GPA" "Math GPA" "Eng GPA" "Sci GPA" "AP Courses" "Behavior Offense" "Days Absent" ) ///
-	title("Impacts of Concussions on Academic and Behavioral Outcomes: Callaway Sant'Anna Doubly Robust Difference in Difference Approach with Not-Yet-Treated Controls") ///
-	coeflabel( ///
-		Pre_avg		"Pre-Treatment Avg" ///
-        Post_avg    "Post-Treatment Avg" ///
-		Tm2			"t-2" ///
-        Tm1         "t–1" ///
-        Tp0         "t" ///
-        Tp1         "t+1" ///
-		Tp2			"t+2" ///
-    ) ///
-	stats(N N_unique, labels("Student-Years" "Unique Students") fmt(%9.0f)) ///
-    star(* 0.10 ** 0.05 *** 0.01)
-}
-	
-if `cs_did_multiple' == 1 {	
-* ------- Running CS DiD regressions for 2+ concussions effects ------- *
-	
 	preserve
-	keep if ever_treated2 == 1
-	
-foreach y in annual_gpa math_gpa eng_gpa sci_gpa AP offense days_absent {
-	
+	keep if ever_treated==1 /*this is so the regression runs faster*/
 
-	*cs-did regression of cumulative concussions on cumulative gpa
-	csdid `y' male i.ethnicity  ELLStatus SPEDStatus econ_disadvantaged Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear if ever_treated2==1, ivar(research_id) time(sy) gvar(g2) method(dripw) vce(cluster research_id)
+	foreach y in annual_gpa math_gpa eng_gpa sci_gpa offense days_absent {
 
-	* Count student-year observations (capture from csdid before estat overwrites e(N))
-	scalar N1 = e(N)
+		*cs-did regression of cumulative concussions on cumulative gpa
+		csdid `y'  male i.ethnicity  ELLStatus SPEDStatus econ_disadvantaged Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear if ever_treated==1, ivar(research_id) time(sy) gvar(g) method(dripw) vce(cluster research_id)
 
-	estat event, estore(reg_`y')
+		* Count student-year observations (capture from csdid before estat overwrites e(N))
+		scalar N1 = e(N)
 
-	estadd scalar N = N1 : reg_`y'
-	
-	* Count UNIQUE individuals actually used in estimation
-    egen tag_id = tag(research_id) if e(sample)
-    count if tag_id
-    scalar N_unique = r(N)
+		estat event, estore(reg_`y')
 
-    * Add scalar to stored estimation
-    estadd scalar N_unique = N_unique : reg_`y'
+		estadd scalar N = N1 : reg_`y'
 
-    * Clean up temporary variable
-    drop tag_id
-}
+		* Count UNIQUE individuals actually used in estimation
+	    egen tag_id = tag(research_id) if e(sample)
+	    count if tag_id
+	    scalar N_unique = r(N)
+
+	    * Add scalar to stored estimation
+	    estadd scalar N_unique = N_unique : reg_`y'
+
+	    * Clean up temporary variable
+	    drop tag_id
+
+	}
 
 	restore
 
-esttab reg_annual_gpa reg_math_gpa reg_eng_gpa reg_sci_gpa reg_AP reg_offense reg_days_absent using "tables/csdid_eventstudy2.tex", replace ///
-    booktabs se label ///
-    b(%9.3f) se(%9.3f) ///
-    mtitles("GPA" "Math GPA" "Eng GPA" "Sci GPA" "AP Courses" "Behavior Offense" "Days Absent" ) ///
-	title("Impacts of Multiple Concussions on Academic and Behavioral Outcomes: Callaway Sant'Anna Doubly Robust Difference in Difference Approach with Not-Yet-Treated Controls") ///
-	coeflabel( ///
-		Pre_avg		"Pre-Treatment Avg" ///
-        Post_avg    "Post-Treatment Avg" ///
-		Tm2			"t-2" ///
-        Tm1         "t–1" ///
-        Tp0         "t" ///
-        Tp1         "t+1" ///
-		Tp2			"t+2" ///
-    ) ///
-	stats(N N_unique, labels("Student-Years" "Unique Students") fmt(%9.0f)) ///
-    star(* 0.10 ** 0.05 *** 0.01)
-	
-}
-			
-if `idfe' == 1 {
-	
-	use "Data/Processed Data/regdata_new.dta", clear	
+	esttab reg_annual_gpa reg_math_gpa reg_eng_gpa reg_sci_gpa reg_offense reg_days_absent using "tables/csdid_eventstudy.tex", replace ///
+	    booktabs se label ///
+	    b(%9.3f) se(%9.3f) ///
+	    mtitles("GPA" "Math GPA" "Eng GPA" "Sci GPA" "Behavior Offense" "Days Absent" ) ///
+		title("Effects of a First Concussion on Academic and Behavioral Outcomes") ///
+		coeflabel( ///
+			Pre_avg		"Pre-Treatment Avg" ///
+	        Post_avg    "Post-Treatment Avg" ///
+			Tm2			"t-2" ///
+	        Tm1         "t–1" ///
+	        Tp0         "t" ///
+	        Tp1         "t+1" ///
+			Tp2			"t+2" ///
+	    ) ///
+		stats(N N_unique, labels("Student-Years" "Unique Students") fmt(%9.0f)) ///
+	    star(* 0.10 ** 0.05 *** 0.01)
 
-	
-	* run regressions
-	eststo clear 
-	
-	foreach var in annual_gpa math_gpa eng_gpa sci_gpa AP offense days_absent {
-	
-	eststo: reghdfe `var' sy_conc_lag  i.GradeLevel  ELLStatus SPEDStatus econ_disadvantaged Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball, absorb(SCHOOL_CODE sy research_id) vce(cluster research_id)
-	
-	
+}
+
+
+* -----------------------------------------------------------------------
+* TABLE 5: CS DiD — effects of a second concussion
+* -----------------------------------------------------------------------
+if `cs_did_multiple' == 1 {
+
+	use "Data/Processed Data/regdata_new.dta", clear
+
+	preserve
+	keep if ever_treated2 == 1
+
+	foreach y in annual_gpa math_gpa eng_gpa sci_gpa offense days_absent {
+
+		*cs-did regression of cumulative concussions on cumulative gpa
+		csdid `y' male i.ethnicity  ELLStatus SPEDStatus econ_disadvantaged Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear if ever_treated2==1, ivar(research_id) time(sy) gvar(g2) method(dripw) vce(cluster research_id)
+
+		* Count student-year observations (capture from csdid before estat overwrites e(N))
+		scalar N1 = e(N)
+
+		estat event, estore(reg_`y')
+
+		estadd scalar N = N1 : reg_`y'
+
+		* Count UNIQUE individuals actually used in estimation
+	    egen tag_id = tag(research_id) if e(sample)
+	    count if tag_id
+	    scalar N_unique = r(N)
+
+	    * Add scalar to stored estimation
+	    estadd scalar N_unique = N_unique : reg_`y'
+
+	    * Clean up temporary variable
+	    drop tag_id
 	}
-	
+
+	restore
+
+	esttab reg_annual_gpa reg_math_gpa reg_eng_gpa reg_sci_gpa reg_offense reg_days_absent using "tables/csdid_eventstudy2.tex", replace ///
+	    booktabs se label ///
+	    b(%9.3f) se(%9.3f) ///
+	    mtitles("GPA" "Math GPA" "Eng GPA" "Sci GPA" "Behavior Offense" "Days Absent" ) ///
+		title("Effects of Multiple Concussions on Academic and Behavioral Outcomes") ///
+		coeflabel( ///
+			Pre_avg		"Pre-Treatment Avg" ///
+	        Post_avg    "Post-Treatment Avg" ///
+			Tm2			"t-2" ///
+	        Tm1         "t–1" ///
+	        Tp0         "t" ///
+	        Tp1         "t+1" ///
+			Tp2			"t+2" ///
+	    ) ///
+		stats(N N_unique, labels("Student-Years" "Unique Students") fmt(%9.0f)) ///
+	    star(* 0.10 ** 0.05 *** 0.01)
+
+}
+
+
+* -----------------------------------------------------------------------
+* TABLE 3: Individual fixed effects (IDFE) model
+* -----------------------------------------------------------------------
+if `idfe' == 1 {
+
+	use "Data/Processed Data/regdata_new.dta", clear
+
+	* run regressions
+	eststo clear
+
+	foreach var in annual_gpa math_gpa eng_gpa sci_gpa offense days_absent {
+
+	eststo: reghdfe `var' sy_conc_lag  i.GradeLevel  ELLStatus SPEDStatus econ_disadvantaged Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer Paddling Football Cheerleading Basketball Baseball, absorb(SCHOOL_CODE sy research_id) vce(cluster research_id)
+
+	}
+
 	esttab using "tables/idfe.tex", replace ///
     booktabs se label ///
     b(%9.3f) se(%9.3f) ///
-	mtitle("GPA" "Math GPA" "Eng GPA" "Sci GPA" "AP Courses" "Behavior Offense" "Days Absent") ///
+	mtitle("GPA" "Math GPA" "Eng GPA" "Sci GPA" "Behavior Offense" "Days Absent") ///
 	keep(sy_conc_lag econ_disadvantaged ELLStatus SPEDStatus) ///
 	title("Effect of Lagged School Year Concussions on Academic and Behavioral Outcomes: Individual Fixed Effects Model") ///
 	coeflabel( ///
@@ -495,109 +549,105 @@ if `idfe' == 1 {
 		) ///
 	stats(N, labels("Student-Years") fmt(%9.0f)) ///
     star(* 0.10 ** 0.05 *** 0.01)
-	
-	
+
 }
 
+
+* -----------------------------------------------------------------------
+* TABLE A1: Heterogeneous effects of concussions
+* -----------------------------------------------------------------------
 if `heterogeneity' == 1 {
-	
+
 	use "Data/Processed Data/regdata_new.dta", clear
-	
-	
-*run regressions
-eststo clear
 
-* Col 1: Male x Concussions (t-1)
-eststo m1: reghdfe annual_gpa c.sy_conc_lag##i.male ///
-    i.ethnicity ELLStatus SPEDStatus econ_disadvantaged ///
-    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
-    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
-    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
+	*run regressions
+	eststo clear
 
-* Col 2: Econ. Disadv. x Concussions (t-1)
-eststo m2: reghdfe annual_gpa c.sy_conc_lag##i.econ_disadvantaged ///
-    male i.ethnicity ELLStatus SPEDStatus ///
-    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
-    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
-    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
+	* Col 1: Male x Concussions (t-1)
+	eststo m1: reghdfe annual_gpa c.sy_conc_lag##i.male ///
+	    i.ethnicity ELLStatus SPEDStatus econ_disadvantaged ///
+	    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
+	    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
+	    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
 
-* Col 3: ELL x Concussions (t-1)
-eststo m3: reghdfe annual_gpa c.sy_conc_lag##i.ELLStatus ///
-    male i.ethnicity SPEDStatus econ_disadvantaged ///
-    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
-    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
-    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
+	* Col 2: Econ. Disadv. x Concussions (t-1)
+	eststo m2: reghdfe annual_gpa c.sy_conc_lag##i.econ_disadvantaged ///
+	    male i.ethnicity ELLStatus SPEDStatus ///
+	    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
+	    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
+	    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
 
-* Col 4: SPED x Concussions (t-1)
-eststo m4: reghdfe annual_gpa c.sy_conc_lag##i.SPEDStatus ///
-    male i.ethnicity ELLStatus econ_disadvantaged ///
-    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
-    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
-    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
+	* Col 3: ELL x Concussions (t-1)
+	eststo m3: reghdfe annual_gpa c.sy_conc_lag##i.ELLStatus ///
+	    male i.ethnicity SPEDStatus econ_disadvantaged ///
+	    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
+	    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
+	    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
 
-* Col 5: ADHD x Concussions (t-1)
-eststo m5: reghdfe annual_gpa c.sy_conc_lag##i.ADHD ///
-    SPEDStatus male i.ethnicity ELLStatus econ_disadvantaged ///
-    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
-    Paddling Football Cheerleading Basketball Baseball AUT Dyslexia BirthYear, ///
-    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
+	* Col 4: SPED x Concussions (t-1)
+	eststo m4: reghdfe annual_gpa c.sy_conc_lag##i.SPEDStatus ///
+	    male i.ethnicity ELLStatus econ_disadvantaged ///
+	    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
+	    Paddling Football Cheerleading Basketball Baseball ADHD AUT Dyslexia BirthYear, ///
+	    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
 
-* Col 6: Autism x Concussions (t-1)
-eststo m6: reghdfe annual_gpa c.sy_conc_lag##i.AUT ///
-    SPEDStatus male i.ethnicity ELLStatus econ_disadvantaged ///
-    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
-    Paddling Football Cheerleading Basketball Baseball ADHD Dyslexia BirthYear, ///
-    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
+	* Col 5: ADHD x Concussions (t-1)
+	eststo m5: reghdfe annual_gpa c.sy_conc_lag##i.ADHD ///
+	    SPEDStatus male i.ethnicity ELLStatus econ_disadvantaged ///
+	    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
+	    Paddling Football Cheerleading Basketball Baseball AUT Dyslexia BirthYear, ///
+	    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
 
-* Col 7: Dyslexia x Concussions (t-1)
-eststo m7: reghdfe annual_gpa c.sy_conc_lag##i.Dyslexia ///
-    SPEDStatus male i.ethnicity ELLStatus econ_disadvantaged ///
-    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
-    Paddling Football Cheerleading Basketball Baseball AUT ADHD BirthYear, ///
-    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
+	* Col 6: Autism x Concussions (t-1)
+	eststo m6: reghdfe annual_gpa c.sy_conc_lag##i.AUT ///
+	    SPEDStatus male i.ethnicity ELLStatus econ_disadvantaged ///
+	    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
+	    Paddling Football Cheerleading Basketball Baseball ADHD Dyslexia BirthYear, ///
+	    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
 
-*------------------------------------------------------------
-* Export LaTeX: 7 columns, each keeps only its interaction set
-*------------------------------------------------------------
+	* Col 7: Dyslexia x Concussions (t-1)
+	eststo m7: reghdfe annual_gpa c.sy_conc_lag##i.Dyslexia ///
+	    SPEDStatus male i.ethnicity ELLStatus econ_disadvantaged ///
+	    Wrestling Volleyball track_field martial_arts Tennis Swimming Softball Soccer ///
+	    Paddling Football Cheerleading Basketball Baseball AUT ADHD BirthYear, ///
+	    absorb(SCHOOL_CODE##sy) vce(cluster research_id)
 
-*------------------------------------------------------------
-* Export LaTeX: interactions + "core dummies" in every column
-*------------------------------------------------------------
-esttab m1 m2 m3 m4 m5 m6 m7 using "tables/heterogeneity.tex", replace ///
-    b(%9.3f) se(%9.3f) ///
-    star(* 0.10 ** 0.05 *** 0.01) ///
-    compress nonotes ///
-    mtitle("Male" "Econ. Disadv." "ELL" "SPED" "ADHD" "Autism" "Dyslexia") ///
-    keep( ///
-        sy_conc_lag ///
-        1.male 1.econ_disadvantaged 1.ELLStatus 1.SPEDStatus 1.ADHD 1.AUT 1.Dyslexia ///
-        1.male#c.sy_conc_lag ///
-        1.econ_disadvantaged#c.sy_conc_lag ///
-        1.ELLStatus#c.sy_conc_lag ///
-        1.SPEDStatus#c.sy_conc_lag ///
-        1.ADHD#c.sy_conc_lag ///
-        1.AUT#c.sy_conc_lag ///
-        1.Dyslexia#c.sy_conc_lag ///
-    ) ///
-    varlabels( ///
-        sy_conc_lag "Concussions (t-1)" ///
-        1.male "Male" ///
-        1.econ_disadvantaged "Economically Disadvantaged" ///
-        1.ELLStatus "English Language Learner" ///
-        1.SPEDStatus "Special Education" ///
-        1.ADHD "ADHD" ///
-        1.AUT "Autism" ///
-        1.Dyslexia "Dyslexia" ///
-        1.male#c.sy_conc_lag "Male $\times$ Concussions (t-1)" ///
-        1.econ_disadvantaged#c.sy_conc_lag "Economically Disadvantaged $\times$ Concussions (t-1)" ///
-        1.ELLStatus#c.sy_conc_lag "English Language Learner $\times$ Concussions (t-1)" ///
-        1.SPEDStatus#c.sy_conc_lag "Special Education $\times$ Concussions (t-1)" ///
-        1.ADHD#c.sy_conc_lag "ADHD $\times$ Concussions (t-1)" ///
-        1.AUT#c.sy_conc_lag "Autism $\times$ Concussions (t-1)" ///
-        1.Dyslexia#c.sy_conc_lag "Dyslexia $\times$ Concussions (t-1)" ///
-    ) ///
-    stats(N, fmt(%9.0f) label("Student-Years"))
-
+	*------------------------------------------------------------
+	* Export LaTeX: interactions + "core dummies" in every column
+	*------------------------------------------------------------
+	esttab m1 m2 m3 m4 m5 m6 m7 using "tables/heterogeneity.tex", replace ///
+	    b(%9.3f) se(%9.3f) ///
+	    star(* 0.10 ** 0.05 *** 0.01) ///
+	    compress nonotes ///
+	    mtitle("Male" "Econ. Disadv." "ELL" "SPED" "ADHD" "Autism" "Dyslexia") ///
+	    keep( ///
+	        sy_conc_lag ///
+	        1.male 1.econ_disadvantaged 1.ELLStatus 1.SPEDStatus 1.ADHD 1.AUT 1.Dyslexia ///
+	        1.male#c.sy_conc_lag ///
+	        1.econ_disadvantaged#c.sy_conc_lag ///
+	        1.ELLStatus#c.sy_conc_lag ///
+	        1.SPEDStatus#c.sy_conc_lag ///
+	        1.ADHD#c.sy_conc_lag ///
+	        1.AUT#c.sy_conc_lag ///
+	        1.Dyslexia#c.sy_conc_lag ///
+	    ) ///
+	    varlabels( ///
+	        sy_conc_lag "Concussions (t-1)" ///
+	        1.male "Male" ///
+	        1.econ_disadvantaged "Economically Disadvantaged" ///
+	        1.ELLStatus "English Language Learner" ///
+	        1.SPEDStatus "Special Education" ///
+	        1.ADHD "ADHD" ///
+	        1.AUT "Autism" ///
+	        1.Dyslexia "Dyslexia" ///
+	        1.male#c.sy_conc_lag "Male $\times$ Concussions (t-1)" ///
+	        1.econ_disadvantaged#c.sy_conc_lag "Economically Disadvantaged $\times$ Concussions (t-1)" ///
+	        1.ELLStatus#c.sy_conc_lag "English Language Learner $\times$ Concussions (t-1)" ///
+	        1.SPEDStatus#c.sy_conc_lag "Special Education $\times$ Concussions (t-1)" ///
+	        1.ADHD#c.sy_conc_lag "ADHD $\times$ Concussions (t-1)" ///
+	        1.AUT#c.sy_conc_lag "Autism $\times$ Concussions (t-1)" ///
+	        1.Dyslexia#c.sy_conc_lag "Dyslexia $\times$ Concussions (t-1)" ///
+	    ) ///
+	    stats(N, fmt(%9.0f) label("Student-Years"))
 
 }
-
